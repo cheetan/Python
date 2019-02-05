@@ -85,24 +85,23 @@ class HDBUserStoreClass(object):
 			print("First")
 
 		elif self.has_replication is True & self.is_multi_node is not True:
-			# wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			# wtenantkey = 'hdbuserstore SET W{} localhost:{}@{} SYSTEM {};'.format(self.dparameters.get('tenantsid'), self.dparameters.get('tenantsqlport'), self.dparameters.get('tenantsid'), self.dparameters.get('passwordkey'))
-			# systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			# systemdbsapdbctrltenantkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{2}@{1} SAP_DBCTRL {3}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'),
-			#                                                                                                         self.dparameters.get('passwordkey'))
-			# systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{1} SAP_DBCTRL {2}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('tenantsqlport'), self.dparameters.get('passwordkey'))
-			# bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			# bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			# bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{0} localhost:{1}@{0} BLADELOGIC {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			# camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			# camtenantkey = 'hdbuserstore SET CAM{0} localhost:{1}@{0} CAM_CHANGE {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			#
-			# hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey, bladelogickey, bladelogictenantkey, camkey, camtenantkey}
-			# for cmd in hdbuserstorecommands:
-			# 	subprocess.call(cmd, shell=True)
+			wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			wtenantkey = 'hdbuserstore SET W{} localhost:{}@{} SYSTEM {};'.format(self.dparameters.get('tenantsid'), self.dparameters.get('tenantsqlport'), self.dparameters.get('tenantsid'), self.dparameters.get('passwordkey'))
+			systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			systemdbsapdbctrltenantkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{2}@{1} SAP_DBCTRL {3}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'),
+			                                                                                                        self.dparameters.get('passwordkey'))
+			systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{1} SAP_DBCTRL {2}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('tenantsqlport'), self.dparameters.get('passwordkey'))
+			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{0} localhost:{1}@{0} BLADELOGIC {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			camtenantkey = 'hdbuserstore SET CAM{0} localhost:{1}@{0} CAM_CHANGE {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+
+			hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey, bladelogickey, bladelogictenantkey, camkey, camtenantkey}
+			for cmd in hdbuserstorecommands:
+				subprocess.call(cmd, shell=True)
 
 			subprocess.call(['hdbuserstore list'], shell=True)
-			print("Second")
 
 		elif self.has_replication is not True & self.is_multi_node is True:
 			wkey = 'hdbuserstore SET W "{0}:3{1}13, {2}:3{1}13, {3}:3{1}13" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0], self.dparameters.get('instance_number'), self.dparameters.get('master_hosts')[1],
@@ -124,7 +123,6 @@ class HDBUserStoreClass(object):
 				subprocess.call(cmd, shell=True)
 
 			subprocess.call(['hdbuserstore list'], shell=True)
-			print("Third")
 
 		elif self.has_replication & self.is_multi_node is not True:
 			wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
@@ -146,8 +144,6 @@ class HDBUserStoreClass(object):
 
 			subprocess.call(['hdbuserstore list'], shell=True)
 
-			print("Fourth")
-
 	def create_hdb_user_store_hana_non_mdc(self):
 
 		if self.has_replication & self.is_multi_node:
@@ -165,10 +161,11 @@ class HDBUserStoreClass(object):
 
 def main():
 
+	if os.getlogin() == 'root':
+		sys.exit("You must be authenticated with <sid>adm user in order to run the script")
 	if len(sys.argv) == 2:
 		ohana = HDBUserStoreClass(sys.argv[1])
 	else:
 		sys.exit("You must pass only one parameter to the script, which is the password for the HDBuserstore keys")
-
 
 if __name__ == '__main__': main()
