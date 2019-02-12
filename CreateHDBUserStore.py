@@ -82,7 +82,25 @@ class HDBUserStoreClass(object):
 	def create_hdb_user_store_hana_mdc(self):
 
 		if self.has_replication & self.is_multi_node:
-			print("First")
+			wkey = 'hdbuserstore SET W "{0}:3{1}13, {2}:3{1}13, {3}:3{1}13" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0], self.dparameters.get('instance_number'), self.dparameters.get('master_hosts')[1],
+			                                                                                           self.dparameters.get('master_hosts')[2], self.dparameters.get('passwordkey'))
+			wtenantkey = 'hdbuserstore SET W{0} "{1}:3{2}13@{0}, {3}:3{2}13@{0}, {4}:3{2}13@{0}" SYSTEM {5};'.format(self.dparameters.get('tenantsid'), self.dparameters.get('master_hosts')[0], self.dparameters.get(
+				'instance_number'), self.dparameters.get('master_hosts')[1], self.dparameters.get('master_hosts')[2], self.dparameters.get('passwordkey'))
+			systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			systemdbsapdbctrltenantkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{2}@{1} SAP_DBCTRL {3}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'),
+			                                                                                                        self.dparameters.get('passwordkey'))
+			systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{1} SAP_DBCTRL {2}'.format(self.dparameters.get('systemdbsid'), self.dparameters.get('tenantsqlport'), sys.argv())
+			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{0} localhost:{1}@{0} BLADELOGIC {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+			camtenantkey = 'hdbuserstore SET CAM{0} localhost:{1}@{0} CAM_CHANGE {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
+
+			hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey, bladelogickey, bladelogictenantkey, camkey, camtenantkey}
+			for cmd in hdbuserstorecommands:
+				subprocess.call(cmd, shell=True)
+
+			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication is True & self.is_multi_node is not True:
 			wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
@@ -147,17 +165,59 @@ class HDBUserStoreClass(object):
 	def create_hdb_user_store_hana_non_mdc(self):
 
 		if self.has_replication & self.is_multi_node:
-			print("First")
+			wkey = 'hdbuserstore SET W "{0}:{1}, {2}:{1}, {3}:{1}" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0], self.dparameters.get('sqlport'), self.dparameters.get('master_hosts')[1], self.dparameters.get(
+				'master_hosts')[2], self.dparameters.get('password'))
+			sapdbctrlkey = 'hdbuserstore SET {0}SAPDBCTRL localhost:{1} SAP_DBCTRL {2};'.format(self.dparameters.get('sid'), self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{0} BKPMON {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{0} BLADELOGIC {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			camkey = 'hdbuserstore SET CAM localhost:{0} CAM_CHANGE {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+
+			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey}
+			for cmd in hdbuserstorecommands:
+				subprocess.call(cmd, shell=True)
+
+			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication is True & self.is_multi_node is not True:
-			print("Second")
+			wkey = 'hdbuserstore SET W "{0}:{1}, {2}:{1}, {3}:{1}" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0], self.dparameters.get('sqlport'), self.dparameters.get('master_hosts')[1], self.dparameters.get(
+				'master_hosts')[2], self.dparameters.get('password'))
+			sapdbctrlkey = 'hdbuserstore SET {0}SAPDBCTRL localhost:{1} SAP_DBCTRL {2};'.format(self.dparameters.get('sid'), self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{0} BKPMON {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{0} BLADELOGIC {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			camkey = 'hdbuserstore SET CAM localhost:{0} CAM_CHANGE {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+
+			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey}
+			for cmd in hdbuserstorecommands:
+				subprocess.call(cmd, shell=True)
+
+			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication is not True & self.is_multi_node is True:
-			print("Third")
+			wkey = 'hdbuserstore SET W "{0}:{1}, {2}:{1}, {3}:{1}" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0], self.dparameters.get('sqlport'), self.dparameters.get('master_hosts')[1], self.dparameters.get(
+				'master_hosts')[2], self.dparameters.get('password'))
+			sapdbctrlkey = 'hdbuserstore SET {0}SAPDBCTRL localhost:{1} SAP_DBCTRL {2};'.format(self.dparameters.get('sid'), self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{0} BKPMON {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{0} BLADELOGIC {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			camkey = 'hdbuserstore SET CAM localhost:{0} CAM_CHANGE {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+
+			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey}
+			for cmd in hdbuserstorecommands:
+				subprocess.call(cmd, shell=True)
+
+			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication & self.is_multi_node is not True:
-			print("Fourth")
+			wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			sapdbctrlkey = 'hdbuserstore SET {0}SAPDBCTRL localhost:{1} SAP_DBCTRL {2};'.format(self.dparameters.get('sid'), self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{0} BKPMON {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{0} BLADELOGIC {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			camkey = 'hdbuserstore SET CAM localhost:{0} CAM_CHANGE {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
 
+			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey}
+			for cmd in hdbuserstorecommands:
+				subprocess.call(cmd, shell=True)
+
+			subprocess.call(['hdbuserstore list'], shell=True)
 
 def main():
 
