@@ -1,7 +1,7 @@
-#######################################
+##############################################################################
 # This script is intended to create the keys in HDBuserstore for HANA Non-MDC and HANA MDC
 # Author: Catalin Mihai Popa -> i324220
-#######################################
+##############################################################################
 
 import sys
 import os
@@ -49,15 +49,27 @@ class HDBUserStoreClass(object):
 			                    'passwordkey': password}
 		else:
 			self.dparameters = {'systemdbsid': subprocess.check_output('echo $SAPSYSTEMNAME', shell=True).replace('\n', ''),
-								'systemdbsqlport': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=4 'NR==3{print $c}' | grep -o '.....$'", shell=True).replace('\n', ''),
+								'systemdbsqlport': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=4 '/SYSTEMDB/{print $c}' | grep --only-matching '.....$'", shell=True).replace('\n', ''),
 								'localhostname': profile_name[-12:],
-								'tenantsid': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=1 'NR==4 {print $c}'", shell=True).replace('\n', ''),
-								'tenantsqlport': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=2 'NR==4 {print $c}' | grep -o '.....$'", shell=True).replace('\n', ''),
+								# 'tenantsid': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=1 'NR==4 {print $c}'", shell=True).replace('\n', ''),
+								# 'tenantsqlport': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=2 'NR==4 {print $c}' | grep --only-matching '.....$'", shell=True).replace('\n', ''),
 								'instance_number': instance_number,
 								'passwordkey': password}
 
+			os.chdir(r"/hana/shared/{0}/HDB{1}/{2}".format(sap_system_name, instance_number, self.dparameters['localhostname']))
+			found = False
+			daemon_file = 'daemon.ini'
+			with open(daemon_file) as f:
+				for line in f:
+					if not found and "[indexserver." in line:
+						self.dparameters['tenantsid'] = line.strip("[indexserver.").strip("\n").strip("]")
+						found = True
+
+			self.dparameters['tenantsqlport'] = subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=2 '/{0}/{{print $c}}' | grep --only-matching '.....$'".format(self.dparameters['tenantsid']), shell=True).replace('\n', '')
+
 		os.chdir(r"/hana/shared/" + sap_system_name + r"/global/hdb/custom/config")
 		self.dparameters['master_hosts'] = subprocess.check_output("""awk '$1 == "master" {for(i=3; i<=NF; i++) print substr($i,1,12)}' nameserver.ini""", shell=True).split()
+
 
 		print("################################# \t Parameters to be used in HDBuserstore keys creation \t#################################")
 		for k, v in self.dparameters.iteritems():
@@ -219,6 +231,7 @@ class HDBUserStoreClass(object):
 
 			subprocess.call(['hdbuserstore list'], shell=True)
 
+
 def main():
 
 	if os.getlogin() == 'root':
@@ -227,5 +240,6 @@ def main():
 		ohana = HDBUserStoreClass(sys.argv[1])
 	else:
 		sys.exit("You must pass only one parameter to the script, which is the password for the HDBuserstore keys")
+
 
 if __name__ == '__main__': main()
