@@ -1,6 +1,7 @@
 ##############################################################################
-# This script is intended to create the keys in HDBuserstore for HANA Non-MDC and HANA MDC
-# Author: Catalin Mihai Popa -> i324220
+# This script is intended to create the keys in HDBuserstore of HANA
+# It work with HANA Non-MDC and HANA MDC
+# Author: Catalin Mihai Popa -> I324220
 ##############################################################################
 
 import sys
@@ -8,6 +9,7 @@ import os
 import subprocess
 import datetime
 from datetime import datetime
+from string import Template
 
 
 class HDBUserStoreClass(object):
@@ -22,7 +24,7 @@ class HDBUserStoreClass(object):
 				date_execution = datetime.now()
 				print(date_execution.strftime("Date and time when the script was executed: %x, %H:%M"))
 				print("\n\n\n")
-				print("################################# \t Print HANA Type \t#################################")
+				print("################################# \t Print HANA Type\t #################################")
 				print("\t\t\t\t\t HANA is Non-MDC")
 				print("#################################################################################################")
 				print("\n\n\n")
@@ -31,7 +33,7 @@ class HDBUserStoreClass(object):
 				date_execution = datetime.now()
 				print(date_execution.strftime("Date and time when the script was executed: %x, %H:%M"))
 				print("\n\n\n")
-				print("################################# \t Print HANA Type \t#################################")
+				print("################################# \t Print HANA Type\t #################################")
 				print("\t\t\t\t\t HANA is MDC")
 				print("#################################################################################################")
 				print("\n\n\n")
@@ -43,16 +45,13 @@ class HDBUserStoreClass(object):
 
 		if not self.is_mdc:
 			self.dparameters = {'sid': subprocess.check_output('echo $SAPSYSTEMNAME', shell=True).replace('\n', ''),
-			                    'sqlport': '3{}15'.format(instance_number),
-			                    'localhostname': profile_name[-12:],
-			                    'instance_number': instance_number,
+			                    'sqlport': '3{}15'.format(instance_number), 'localhostname': profile_name[-12:], 'instance_number': instance_number,
 			                    'passwordkey': password}
 		else:
 			self.dparameters = {'systemdbsid': subprocess.check_output('echo $SAPSYSTEMNAME', shell=True).replace('\n', ''),
 			                    'systemdbsqlport': subprocess.check_output("hdbnsutil -printSystemInformation | awk -v c=4 '/SYSTEMDB/{print $c}' | grep "
 			                                                               "--only-matching '.....$'", shell=True).replace('\n', ''),
-			                    'localhostname': profile_name[-12:],
-			                    'instance_number': instance_number,
+			                    'localhostname': profile_name[-12:], 'client_interface_name': profile_name[-14:], 'instance_number': instance_number,
 			                    'passwordkey': password}
 
 			os.chdir(r"/hana/shared/{0}/HDB{1}/{2}".format(sap_system_name, instance_number, self.dparameters['localhostname']))
@@ -69,16 +68,19 @@ class HDBUserStoreClass(object):
 			                                                            shell=True).replace('\n', '')
 
 		os.chdir(r"/hana/shared/" + sap_system_name + r"/global/hdb/custom/config")
-		self.dparameters['master_hosts'] = subprocess.check_output("""awk '$1 == "master" {for(i=3; i<=NF; i++) print substr($i,1,12)}' nameserver.ini""",
-		                                                           shell=True).split()
+		masters_list = subprocess.check_output("""awk '$1 == "master" {for(i=3; i<=NF; i++) print substr($i,1,12)}' nameserver.ini""", shell=True).split()
+		for i, v in enumerate(masters_list, start=1):
+			self.dparameters["master_" + str(i)] = v
+		# for i in range(len(masters_list)):
+		# 	self.dparameters["master_" + str(i+1)] = masters_list[i]
 
 		print("################################# \t Parameters to be used in HDBuserstore keys creation \t#################################")
-		for k, v in self.dparameters.iteritems():
+		for k, v in self.dparameters.items():
 			print('Parameter name: {} -> {}'.format(k, v))
 		print("#################################################################################################################################")
 		print("\n\n\n")
 
-		if len(self.dparameters['master_hosts']) > 1:
+		if self.dparameters['master_2']:
 			self.is_multi_node = True
 		else:
 			self.is_multi_node = False
@@ -94,336 +96,230 @@ class HDBUserStoreClass(object):
 
 	def create_hdb_user_store_hana_mdc(self):
 
+		w_key_templ = Template('hdbuserstore set W localhost:${systemdbsqlport} SYSTEM ${passwordkey};')
+		w_key_client_templ = Template('hdbuserstore SET W ${client_interface_name}:${systemdbsqlport} SYSTEM ${passwordkey};')
+		w_key_multi_templ = Template('hdbuserstore SET W "${master_1}:3${instance_number}13, ${master_2}:3${instance_number}13,'
+		                             '${master_3}:3${instance_number}13" SYSTEM ${passwordkey};')
+		w_key_tenant_templ = Template('hdbuserstore set W${tenantsid} localhost:${systemdbsqlport}@${tenantsid} SYSTEM ${passwordkey};')
+		w_key_tenant_client_templ = Template('hdbuserstore set W${tenantsid} ${client_interface_name}:${systemdbsqlport}@${tenantsid} '
+		                                     'SYSTEM ${passwordkey};')
+		w_key_tenant_multi_templ = Template('hdbuserstore set W${tenantsid} "${master_1}:3${instance_number}13@${tenant_sid}, '
+		                                    '${master_2}:3${instance_number}13@${tenant_sid}, ${master_3}:3${instance_number}13@${tenant_sid}" SYSTEM '
+		                                    '${passwordkey};')
+
+		sap_db_ctrl_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL localhost:${systemdbsqlport} SAP_DBCTRL ${passwordkey};')
+		sap_db_ctrl_client_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL ${client_interface_name}:${systemdbsqlport} SAP_DBCTRL '
+		                                    '${passwordkey};')
+		sap_db_ctrl_tenant_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid} localhost:${systemdbsqlport}@${tenantsid} SAP_DBCTRL '
+		                                    '${passwordkey};')
+		sap_db_ctrl_tenant_client_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid} ${client_interface_name}:${systemdbsqlport}@'
+		                                           '${tenantsid} SAP_DBCTRL ${passwordkey};')
+
+		sap_db_ctrl_tenant_port_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid} localhost:${tenantsqlport} SAP_DBCTRL '
+		                                         '${passwordkey};')
+		sap_db_ctrl_tenant_port_client_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid} ${client_interface_name}:${tenantsqlport} '
+		                                                'SAP_DBCTRL ${passwordkey};')
+
+		bkpmon_templ = Template('hdbuserstore SET BKPMON localhost:${systemdbsqlport} BKPMON ${passwordkey};')
+		bkpmon_client_templ = Template('hdbuserstore SET BKPMON ${client_interface_name}:${systemdbsqlport} BKPMON ${passwordkey};')
+
+		blade_logic_templ = Template('hdbuserstore SET BLADELOGIC localhost:${systemdbsqlport} BLADELOGIC ${passwordkey};')
+		blade_logic_client_templ = Template('hdbuserstore SET BLADELOGIC ${client_interface_name}:${systemdbsqlport} BLADELOGIC ${passwordkey};')
+		blade_logic_tenant_templ = Template('hdbuserstore SET BLADELOGIC${tenantsid} localhost:${systemdbsqlport}@${tenantsid} BLADELOGIC ${'
+		                                    'passwordkey};')
+		blade_logic_tenant_client_templ = Template('hdbuserstore SET BLADELOGIC${tenantsid} ${client_interface_name}:${systemdbsqlport}@${tenantsid} '
+		                                           'BLADELOGIC ${3};')
+
+		cam_templ = Template('hdbuserstore SET CAM localhost:${systemdbsqlport} CAM_CHANGE ${passwordkey};')
+		cam_client_templ = Template('hdbuserstore SET CAM ${client_interface_name}:${systemdbsqlport} CAM_CHANGE ${passwordkey};')
+		cam_tenant_templ = Template('hdbuserstore SET CAM${tenantsid} localhost:${systemdbsqlport}@${tenantsid} CAM_CHANGE ${passwordkey};')
+		cam_tenant_client_templ = Template('hdbuserstore SET CAM${tenantsid} ${client_interface_name}:${systemdbsqlport}@${tenantsid} CAM_CHANGE '
+		                                   '${passwordkey};')
+
+		nagios_templ = Template('hdbuserstore SET NAGIOS localhost:${systemdbsqlport} NAGIOS ${passwordkey};')
+		nagios_client_templ = Template('hdbuserstore SET NAGIOS ${client_interface_name}:${systemdbsqlport} NAGIOS ${passwordkey};')
+		nagios_tenant_templ = Template('hdbuserstore SET NAGIOS${tenantsid} localhost:${systemdbsqlport}@{tenantsid} NAGIOS ${passwordkey};')
+		nagios_tenant_client_templ = Template('hdbuserstore SET NAGIOS${tenantsid} ${client_interface_name}:${systemdbsqlport}@${tenantsid} NAGIOS '
+		                                      '${passwordkey};')
+
+		stdmuser_templ = Template('hdbuserstore SET STDMUSER localhost:${systemdbsqlport} STDMUSER ${passwordkey};')
+		stdmuser_client_templ = Template('hdbuserstore SET STDMUSER ${client_interface_name}:${systemdbsqlport} STDMUSER ${passwordkey};')
+		stdmuser_tenant_templ = Template('hdbuserstore SET STDMUSER${tenantsid} localhost:${systemdbsqlport}@${tenantsid} STDMUSER ${passwordkey};')
+		stdmuser_tenant_client_templ = Template('hdbuserstore SET STDMUSER@${tenantsid} ${client_interface_name}:${systemdbsqlport}@${tenantsid} '
+		                                        'STDMUSER ${passwordkey};')
+
 		if self.has_replication & self.is_multi_node:
-			wkey = 'hdbuserstore SET W "{0}:3{1}13, {2}:3{1}13, {3}:3{1}13" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0],
-			                                                                                    self.dparameters.get('instance_number'),
-			                                                                                    self.dparameters.get('master_hosts')[1],
-			                                                                                    self.dparameters.get('master_hosts')[2],
-			                                                                                    self.dparameters.get('passwordkey'))
-			wtenantkey = 'hdbuserstore SET W{0} "{1}:3{2}13@{0}, {3}:3{2}13@{0}, {4}:3{2}13@{0}" SYSTEM {5};'.format(self.dparameters.get('tenantsid'),
-			                                                                                                         self.dparameters.get('master_hosts')[0],
-			                                                                                                         self.dparameters.get(
-				                                                                                                         'instance_number'),
-			                                                                                                         self.dparameters.get('master_hosts')[1],
-			                                                                                                         self.dparameters.get('master_hosts')[2],
-			                                                                                                         self.dparameters.get('passwordkey'))
-			systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                        self.dparameters.get('systemdbsqlport'),
-			                                                                                        self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{2}@{1} SAP_DBCTRL {3}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                        self.dparameters.get('tenantsid'),
-			                                                                                                        self.dparameters.get('systemdbsqlport'),
-			                                                                                                        self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{1} SAP_DBCTRL {2}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                        self.dparameters.get('tenantsqlport'),
-			                                                                                                        sys.argv())
-			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{0} localhost:{1}@{0} BLADELOGIC {2}'.format(self.dparameters.get('tenantsid'),
-			                                                                                               self.dparameters.get('systemdbsqlport'),
-			                                                                                               self.dparameters.get('passwordkey'))
-			camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			camtenantkey = 'hdbuserstore SET CAM{0} localhost:{1}@{0} CAM_CHANGE {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
+			w_key = w_key_multi_templ.substitute(self.dparameters)
+			w_tenant_key = w_key_tenant_multi_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+			blade_logic_tenant_key = blade_logic_tenant_templ.substitute(self.dparameters)
+			cam_key = cam_templ.substitute(self.dparameters)
+			cam_tenant_key = cam_tenant_templ.substitute(self.dparameters)
+			nagios_key = nagios_templ.substitute(self.dparameters)
+			nagios_tenant_key = nagios_tenant_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+			stdmuser_tenant_key = stdmuser_tenant_templ.substitute(self.dparameters)
 
-			nagioskey = 'hdbuserstore SET NAGIOS localhost:{} NAGIOS {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			nagiostenantkey = 'hdbuserstore SET NAGIOS{0} localhost:{1}@{0} NAGIOS {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER localhost:{} STDMUSER {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			stdmusertenantkey = 'hdbuserstore SET STDMUSER{0} localhost:{1}@{0} STDMUSER {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey,
-			                        bladelogickey, bladelogictenantkey, camkey, camtenantkey, nagioskey, nagiostenantkey, stdmuserkey, stdmusertenantkey}
-			for cmd in hdbuserstorecommands:
+			hdbuserstore_commands = {w_key, w_tenant_key, sap_db_ctrl_key, sap_db_ctrl_tenant_key, sap_db_ctrl_tenant_port_key, bkpmon_key,
+			                         blade_logic_key, blade_logic_tenant_key, cam_key, cam_tenant_key, nagios_key, nagios_tenant_key, stdmuser_key,
+			                         stdmuser_tenant_key}
+			for cmd in hdbuserstore_commands:
 				subprocess.call(cmd, shell=True)
-
-			subprocess.call(['hdbuserstore list'], shell=True)
-
-		elif self.has_replication is True & self.is_multi_node is not True:
-			wkey = 'hdbuserstore SET W {}:{} SYSTEM {};'.format(self.dparameters.get('systemdbsqlport'),
-			                                                    self.dparameters['localhostname'][:-2],
-			                                                    self.dparameters.get('passwordkey'))
-			wtenantkey = 'hdbuserstore SET W{} {}:{}@{} SYSTEM {};'.format(self.dparameters.get('tenantsid'),
-			                                                               self.dparameters['localhostname'][:-2],
-			                                                               self.dparameters.get('tenantsqlport'),
-			                                                               self.dparameters.get('tenantsid'),
-			                                                               self.dparameters.get('passwordkey'))
-			systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL {}:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                 self.dparameters['localhostname'][:-2],
-			                                                                                 self.dparameters.get('systemdbsqlport'),
-			                                                                                 self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantkey = 'hdbuserstore SET {0}SAPDBCTRL{1} {2}:{3}@{1} SAP_DBCTRL {4}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                  self.dparameters.get('tenantsid'),
-			                                                                                                  self.dparameters['localhostname'][:-2],
-			                                                                                                  self.dparameters.get('systemdbsqlport'),
-			                                                                                                  self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} {2}:{1} SAP_DBCTRL {3}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                  self.dparameters.get('tenantsqlport'),
-			                                                                                                  self.dparameters['localhostname'][:-2],
-			                                                                                                  self.dparameters.get('passwordkey'))
-			bkpmonkey = 'hdbuserstore SET BKPMON {}:{} BKPMON {}'.format(self.dparameters['localhostname'][:-2],
-			                                                             self.dparameters.get('systemdbsqlport'),
-			                                                             self.dparameters.get('passwordkey'))
-
-			bladelogickey = 'hdbuserstore SET BLADELOGIC {}:{} BLADELOGIC {}'.format(self.dparameters['localhostname'][:-2],
-			                                                                         self.dparameters.get('systemdbsqlport'),
-			                                                                         self.dparameters.get('passwordkey'))
-			bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{0} {1}:{2}@{0} BLADELOGIC {3}'.format(self.dparameters.get('tenantsid'),
-			                                                                                         self.dparameters['localhostname'][:-2],
-			                                                                                         self.dparameters.get('systemdbsqlport'),
-			                                                                                         self.dparameters.get('passwordkey'))
-
-			camkey = 'hdbuserstore SET CAM {}:{} CAM_CHANGE {}'.format(self.dparameters['localhostname'][:-2],
-			                                                           self.dparameters.get('systemdbsqlport'),
-			                                                           self.dparameters.get('passwordkey'))
-			camtenantkey = 'hdbuserstore SET CAM{0} {1}:{2}@{0} CAM_CHANGE {3}'.format(self.dparameters.get('tenantsid'),
-			                                                                           self.dparameters['localhostname'][:-2],
-			                                                                           self.dparameters.get('systemdbsqlport'),
-			                                                                           self.dparameters.get('passwordkey'))
-
-			nagioskey = 'hdbuserstore SET NAGIOS {}:{} NAGIOS {}'.format(self.dparameters['localhostname'][:-2],
-			                                                             self.dparameters.get('systemdbsqlport'),
-			                                                             self.dparameters.get('passwordkey'))
-			nagiostenantkey = 'hdbuserstore SET NAGIOS{0} {1}:{2}@{0} NAGIOS {3}'.format(self.dparameters.get('tenantsid'),
-			                                                                             self.dparameters['localhostname'][:-2],
-			                                                                             self.dparameters.get('systemdbsqlport'),
-			                                                                             self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER {}:{} STDMUSER {}'.format(self.dparameters['localhostname'][:-2],
-			                                                                   self.dparameters.get('systemdbsqlport'),
-			                                                                   self.dparameters.get('passwordkey'))
-			stdmusertenantkey = 'hdbuserstore SET STDMUSER{0} {1}:{2}@{0} STDMUSER {3}'.format(self.dparameters.get('tenantsid'),
-			                                                                                   self.dparameters['localhostname'][:-2],
-			                                                                                   self.dparameters.get('systemdbsqlport'),
-			                                                                                   self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey,
-			                        bladelogickey, bladelogictenantkey, camkey, camtenantkey, nagioskey, nagiostenantkey, stdmuserkey, stdmusertenantkey}
-			for cmd in hdbuserstorecommands:
-				subprocess.call(cmd, shell=True)
-
-			subprocess.call(['hdbuserstore list'], shell=True)
-
-		elif self.has_replication is not True & self.is_multi_node is True:
-			wkey = 'hdbuserstore SET W "{0}:3{1}13, {2}:3{1}13, {3}:3{1}13" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0],
-			                                                                                    self.dparameters.get('instance_number'),
-			                                                                                    self.dparameters.get('master_hosts')[1],
-			                                                                                    self.dparameters.get('master_hosts')[2],
-			                                                                                    self.dparameters.get('passwordkey'))
-			wtenantkey = 'hdbuserstore SET W{0} "{1}:3{2}13@{0}, {3}:3{2}13@{0}, {4}:3{2}13@{0}" SYSTEM {5};'.format(self.dparameters.get('tenantsid'),
-			                                                                                                         self.dparameters.get('master_hosts')[0],
-			                                                                                                         self.dparameters.get('instance_number'),
-			                                                                                                         self.dparameters.get('master_hosts')[1],
-			                                                                                                         self.dparameters.get('master_hosts')[2],
-			                                                                                                         self.dparameters.get('passwordkey'))
-			systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                        self.dparameters.get('systemdbsqlport'),
-			                                                                                        self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{2}@{1} SAP_DBCTRL {3}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                        self.dparameters.get('tenantsid'),
-			                                                                                                        self.dparameters.get('systemdbsqlport'),
-			                                                                                                        self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{1} SAP_DBCTRL {2}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                        self.dparameters.get('tenantsqlport'),
-			                                                                                                        sys.argv())
-			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{0} localhost:{1}@{0} BLADELOGIC {2}'.format(self.dparameters.get('tenantsid'),
-			                                                                                               self.dparameters.get('systemdbsqlport'),
-			                                                                                               self.dparameters.get('passwordkey'))
-			camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			camtenantkey = 'hdbuserstore SET CAM{0} localhost:{1}@{0} CAM_CHANGE {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			nagioskey = 'hdbuserstore SET NAGIOS localhost:{} NAGIOS {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			nagiostenantkey = 'hdbuserstore SET NAGIOS{0} localhost:{1}@{0} NAGIOS {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER localhost:{} STDMUSER {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			stdmusertenantkey = 'hdbuserstore SET STDMUSER{0} localhost:{1}@{0} STDMUSER {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey,
-			                        bladelogickey, bladelogictenantkey, camkey, camtenantkey, nagioskey, nagiostenantkey, stdmuserkey, stdmusertenantkey}
-
-			for cmd in hdbuserstorecommands:
-				subprocess.call(cmd, shell=True)
-
 			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication & self.is_multi_node is not True:
-			wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			wtenantkey = 'hdbuserstore SET W{0} localhost:{1}@{0} SYSTEM {2};'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'tenantsqlport'), self.dparameters.get('passwordkey'))
-			systemdbsapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                        self.dparameters.get('systemdbsqlport'),
-			                                                                                        self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantkey = 'hdbuserstore SET {}SAPDBCTRL{} localhost:{}@{} SAP_DBCTRL {}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                   self.dparameters.get('tenantsid'),
-			                                                                                                   self.dparameters.get('systemdbsqlport'),
-			                                                                                                   self.dparameters.get('tenantsid'),
-			                                                                                                   self.dparameters.get('passwordkey'))
-			systemdbsapdbctrltenantportkey = 'hdbuserstore SET {0}SAPDBCTRL{1} localhost:{1} SAP_DBCTRL {2}'.format(self.dparameters.get('systemdbsid'),
-			                                                                                                        self.dparameters.get('tenantsqlport'),
-			                                                                                                        self.dparameters.get('passwordkey'))
-			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			bladelogictenantkey = 'hdbuserstore SET BLADELOGIC{} localhost:{}@{} BLADELOGIC {}'.format(self.dparameters.get('tenantsid'),
-			                                                                                           self.dparameters.get('systemdbsqlport'),
-			                                                                                           self.dparameters.get('tenantsid'),
-			                                                                                           self.dparameters.get('passwordkey'))
-			camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get('passwordkey'))
-			camtenantkey = 'hdbuserstore SET CAM{} localhost:{}@{} CAM_CHANGE {}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('tenantsid'), self.dparameters.get('passwordkey'))
+			w_key = w_key_client_templ.substitute(self.dparameters)
+			w_tenant_key = w_key_tenant_client_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_client_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_client_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_client_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_client_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_client_templ.substitute(self.dparameters)
+			blade_logic_tenant_key = blade_logic_tenant_client_templ.substitute(self.dparameters)
+			cam_key = cam_client_templ.substitute(self.dparameters)
+			cam_tenant_key = cam_tenant_client_templ.substitute(self.dparameters)
+			nagios_key = nagios_client_templ.substitute(self.dparameters)
+			nagios_tenant_key = nagios_tenant_client_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_client_templ.substitute(self.dparameters)
+			stdmuser_tenant_key = stdmuser_tenant_client_templ.substitute(self.dparameters)
 
-			nagioskey = 'hdbuserstore SET NAGIOS localhost:{} NAGIOS {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			nagiostenantkey = 'hdbuserstore SET NAGIOS{0} localhost:{1}@{0} NAGIOS {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER localhost:{} STDMUSER {}'.format(self.dparameters.get('systemdbsqlport'), self.dparameters.get(
-				'passwordkey'))
-			stdmusertenantkey = 'hdbuserstore SET STDMUSER{0} localhost:{1}@{0} STDMUSER {2}'.format(self.dparameters.get('tenantsid'), self.dparameters.get(
-				'systemdbsqlport'), self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, wtenantkey, systemdbsapdbctrlkey, systemdbsapdbctrltenantkey, systemdbsapdbctrltenantportkey, bkpmonkey,
-			                        bladelogickey, bladelogictenantkey, camkey, camtenantkey, nagioskey, nagiostenantkey, stdmuserkey, stdmusertenantkey}
-
-			for cmd in hdbuserstorecommands:
+			hdbuserstore_commands = {w_key, w_tenant_key, sap_db_ctrl_key, sap_db_ctrl_tenant_key, sap_db_ctrl_tenant_port_key, bkpmon_key,
+			                         blade_logic_key, blade_logic_tenant_key, cam_key, cam_tenant_key, nagios_key, nagios_tenant_key, stdmuser_key,
+			                         stdmuser_tenant_key}
+			for cmd in hdbuserstore_commands:
 				subprocess.call(cmd, shell=True)
+			subprocess.call(['hdbuserstore list'], shell=True)
 
+		elif self.has_replication is not True & self.is_multi_node is True:
+			w_key = w_key_multi_templ.substitute(self.dparameters)
+			w_tenant_key = w_key_tenant_multi_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+			blade_logic_tenant_key = blade_logic_tenant_templ.substitute(self.dparameters)
+			cam_key = cam_templ.substitute(self.dparameters)
+			cam_tenant_key = cam_tenant_templ.substitute(self.dparameters)
+			nagios_key = nagios_templ.substitute(self.dparameters)
+			nagios_tenant_key = nagios_tenant_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+			stdmuser_tenant_key = stdmuser_tenant_templ.substitute(self.dparameters)
+
+			hdbuserstore_commands = {w_key, w_tenant_key, sap_db_ctrl_key, sap_db_ctrl_tenant_key, sap_db_ctrl_tenant_port_key, bkpmon_key,
+			                         blade_logic_key, blade_logic_tenant_key, cam_key, cam_tenant_key, nagios_key, nagios_tenant_key, stdmuser_key,
+			                         stdmuser_tenant_key}
+			for cmd in hdbuserstore_commands:
+				subprocess.call(cmd, shell=True)
+			subprocess.call(['hdbuserstore list'], shell=True)
+
+		elif self.has_replication & self.is_multi_node is not True:
+			w_key = w_key_multi_templ.substitute(self.dparameters)
+			w_tenant_key = w_key_tenant_multi_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(self.dparameters)
+			sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+			blade_logic_tenant_key = blade_logic_tenant_templ.substitute(self.dparameters)
+			cam_key = cam_templ.substitute(self.dparameters)
+			cam_tenant_key = cam_tenant_templ.substitute(self.dparameters)
+			nagios_key = nagios_templ.substitute(self.dparameters)
+			nagios_tenant_key = nagios_tenant_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+			stdmuser_tenant_key = stdmuser_tenant_templ.substitute(self.dparameters)
+
+			hdbuserstore_commands = {w_key, w_tenant_key, sap_db_ctrl_key, sap_db_ctrl_tenant_key, sap_db_ctrl_tenant_port_key, bkpmon_key,
+			                         blade_logic_key, blade_logic_tenant_key, cam_key, cam_tenant_key, nagios_key, nagios_tenant_key, stdmuser_key,
+			                         stdmuser_tenant_key}
+			for cmd in hdbuserstore_commands:
+				subprocess.call(cmd, shell=True)
 			subprocess.call(['hdbuserstore list'], shell=True)
 
 	def create_hdb_user_store_hana_non_mdc(self):
 
+		w_key_templ = Template('hdbuserstore set W localhost:${systemdbsqlport} SYSTEM ${passwordkey};')
+		w_key_client_templ = Template('hdbuserstore SET W ${client_interface_name}:${systemdbsqlport} SYSTEM ${passwordkey};')
+		w_key_multi_templ = Template('hdbuserstore SET W "${master_1}:3${instance_number}13, ${master_2}:3${instance_number}13,'
+		                             '${master_3}:3${instance_number}13" SYSTEM ${passwordkey};')
+
+		sap_db_ctrl_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL localhost:${systemdbsqlport} SAP_DBCTRL ${passwordkey};')
+		sap_db_ctrl_client_templ = Template('hdbuserstore SET ${systemdbsid}SAPDBCTRL ${client_interface_name}:${systemdbsqlport} SAP_DBCTRL '
+		                                    '${passwordkey};')
+
+		bkpmon_templ = Template('hdbuserstore SET BKPMON localhost:${systemdbsqlport} BKPMON ${passwordkey};')
+		bkpmon_client_templ = Template('hdbuserstore SET BKPMON ${client_interface_name}:${systemdbsqlport} BKPMON ${passwordkey};')
+
+		blade_logic_templ = Template('hdbuserstore SET BLADELOGIC localhost:${systemdbsqlport} BLADELOGIC ${passwordkey};')
+		blade_logic_client_templ = Template('hdbuserstore SET BLADELOGIC ${client_interface_name}:${systemdbsqlport} BLADELOGIC ${passwordkey};')
+
+		cam_templ = Template('hdbuserstore SET CAM localhost:${systemdbsqlport} CAM_CHANGE ${passwordkey};')
+		cam_client_templ = Template('hdbuserstore SET CAM ${client_interface_name}:${systemdbsqlport} CAM_CHANGE ${passwordkey};')
+
+		nagios_templ = Template('hdbuserstore SET NAGIOS localhost:${systemdbsqlport} NAGIOS ${passwordkey};')
+		nagios_client_templ = Template('hdbuserstore SET NAGIOS ${client_interface_name}:${systemdbsqlport} NAGIOS ${passwordkey};')
+
+		stdmuser_templ = Template('hdbuserstore SET STDMUSER localhost:${systemdbsqlport} STDMUSER ${passwordkey};')
+		stdmuser_client_templ = Template('hdbuserstore SET STDMUSER ${client_interface_name}:${systemdbsqlport} STDMUSER ${passwordkey};')
+
 		if self.has_replication & self.is_multi_node:
-			wkey = 'hdbuserstore SET W "{0}:{1}, {2}:{1}, {3}:{1}" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0],
-			                                                                           self.dparameters.get('sqlport'),
-			                                                                           self.dparameters.get('master_hosts')[1],
-			                                                                           self.dparameters.get('master_hosts')[2],
-			                                                                           self.dparameters.get('password'))
-			sapdbctrlkey = 'hdbuserstore SET {0}SAPDBCTRL localhost:{1} SAP_DBCTRL {2};'.format(self.dparameters.get('sid'),
-			                                                                                    self.dparameters.get('sqlport'),
-			                                                                                    self.dparameters.get('password'))
-			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{0} BKPMON {1};'.format(self.dparameters.get('sqlport'),
-			                                                                       self.dparameters.get('password'))
-			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{0} BLADELOGIC {1};'.format(self.dparameters.get('sqlport'),
-			                                                                                   self.dparameters.get('password'))
-			camkey = 'hdbuserstore SET CAM localhost:{0} CAM_CHANGE {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			w_key = w_key_multi_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+			cam_key = cam_templ.substitute(self.dparameters)
+			nagios_key = nagios_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_templ.substitute(self.dparameters)
 
-			nagioskey = 'hdbuserstore SET NAGIOS localhost:{} NAGIOS {}'.format(self.dparameters.get('sqlport'), self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER localhost:{} STDMUSER {}'.format(self.dparameters.get('sqlport'), self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey, nagioskey, stdmuserkey}
-			for cmd in hdbuserstorecommands:
+			hdbuserstore_commands = {w_key, sap_db_ctrl_key, bkpmon_key, blade_logic_key, cam_key, nagios_key, stdmuser_key}
+			for cmd in hdbuserstore_commands:
 				subprocess.call(cmd, shell=True)
-
 			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication is True & self.is_multi_node is not True:
-			wkey = 'hdbuserstore SET W "{0}:{1}, {2}:{1}, {3}:{1}" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0],
-			                                                                           self.dparameters.get('sqlport'),
-			                                                                           self.dparameters.get('master_hosts')[1],
-			                                                                           self.dparameters.get('master_hosts')[2],
-			                                                                           self.dparameters.get('password'))
+			w_key = w_key_client_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_client_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_client_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_client_templ.substitute(self.dparameters)
+			cam_key = cam_client_templ.substitute(self.dparameters)
+			nagios_key = nagios_client_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_client_templ.substitute(self.dparameters)
 
-			sapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL {}:{} SAP_DBCTRL {};'.format(self.dparameters.get('sid'),
-			                                                                          self.dparameters['localhostname'][:-2],
-			                                                                          self.dparameters.get('sqlport'),
-			                                                                          self.dparameters.get('password'))
-
-			bkpmonkey = 'hdbuserstore SET BKPMON {}:{} BKPMON {};'.format(self.dparameters['localhostname'][:-2],
-			                                                              self.dparameters.get('sqlport'),
-			                                                              self.dparameters.get('password'))
-
-			bladelogickey = 'hdbuserstore SET BLADELOGIC {}:{} BLADELOGIC {};'.format(self.dparameters['localhostname'][:-2],
-			                                                                          self.dparameters.get('sqlport'),
-			                                                                          self.dparameters.get('password'))
-
-			camkey = 'hdbuserstore SET CAM {}:{} CAM_CHANGE {};'.format(self.dparameters['localhostname'][:-2],
-			                                                            self.dparameters.get('sqlport'),
-			                                                            self.dparameters.get('password'))
-
-			nagioskey = 'hdbuserstore SET NAGIOS {}:{} NAGIOS {}'.format(self.dparameters['localhostname'][:-2],
-			                                                             self.dparameters.get('sqlport'),
-			                                                             self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER {}:{} STDMUSER {}'.format(self.dparameters['localhostname'][:-2],
-			                                                                   self.dparameters.get('sqlport'),
-			                                                                   self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey, nagioskey, stdmuserkey}
-			for cmd in hdbuserstorecommands:
+			hdbuserstore_commands = {w_key, sap_db_ctrl_key, bkpmon_key, blade_logic_key, cam_key, nagios_key, stdmuser_key}
+			for cmd in hdbuserstore_commands:
 				subprocess.call(cmd, shell=True)
-
 			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication is not True & self.is_multi_node is True:
-			wkey = 'hdbuserstore SET W "{0}:{1}, {2}:{1}, {3}:{1}" SYSTEM {4};'.format(self.dparameters.get('master_hosts')[0],
-			                                                                           self.dparameters.get('sqlport'),
-			                                                                           self.dparameters.get('master_hosts')[1],
-			                                                                           self.dparameters.get('master_hosts')[2],
-			                                                                           self.dparameters.get('password'))
+			w_key = w_key_multi_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+			cam_key = cam_templ.substitute(self.dparameters)
+			nagios_key = nagios_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_templ.substitute(self.dparameters)
 
-			sapdbctrlkey = 'hdbuserstore SET {}SAPDBCTRL localhost:{} SAP_DBCTRL {};'.format(self.dparameters.get('sid'),
-			                                                                                 self.dparameters.get('sqlport'),
-			                                                                                 self.dparameters.get('password'))
-
-			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{} BKPMON {};'.format(self.dparameters.get('sqlport'),
-			                                                                     self.dparameters.get('password'))
-
-			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{} BLADELOGIC {};'.format(self.dparameters.get('sqlport'),
-			                                                                                 self.dparameters.get('password'))
-
-			camkey = 'hdbuserstore SET CAM localhost:{} CAM_CHANGE {};'.format(self.dparameters.get('sqlport'),
-			                                                                   self.dparameters.get('password'))
-
-			nagioskey = 'hdbuserstore SET NAGIOS {}:{} NAGIOS {}'.format(self.dparameters['localhostname'][:-2],
-			                                                             self.dparameters.get('sqlport'),
-			                                                             self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER {}:{} STDMUSER {}'.format(self.dparameters['localhostname'][:-2],
-			                                                                   self.dparameters.get('sqlport'),
-			                                                                   self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey, nagioskey, stdmuserkey}
-			for cmd in hdbuserstorecommands:
+			hdbuserstore_commands = {w_key, sap_db_ctrl_key, bkpmon_key, blade_logic_key, cam_key, nagios_key, stdmuser_key}
+			for cmd in hdbuserstore_commands:
 				subprocess.call(cmd, shell=True)
-
 			subprocess.call(['hdbuserstore list'], shell=True)
 
 		elif self.has_replication & self.is_multi_node is not True:
-			wkey = 'hdbuserstore SET W localhost:{} SYSTEM {};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
+			w_key = w_key_templ.substitute(self.dparameters)
+			sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+			bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+			blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+			cam_key = cam_templ.substitute(self.dparameters)
+			nagios_key = nagios_templ.substitute(self.dparameters)
+			stdmuser_key = stdmuser_templ.substitute(self.dparameters)
 
-			sapdbctrlkey = 'hdbuserstore SET {0}SAPDBCTRL localhost:{1} SAP_DBCTRL {2};'.format(self.dparameters.get('sid'),
-			                                                                                    self.dparameters.get('sqlport'),
-			                                                                                    self.dparameters.get('password'))
-
-			bkpmonkey = 'hdbuserstore SET BKPMON localhost:{0} BKPMON {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
-
-			bladelogickey = 'hdbuserstore SET BLADELOGIC localhost:{0} BLADELOGIC {1};'.format(self.dparameters.get('sqlport'),
-			                                                                                   self.dparameters.get('password'))
-
-			camkey = 'hdbuserstore SET CAM localhost:{0} CAM_CHANGE {1};'.format(self.dparameters.get('sqlport'), self.dparameters.get('password'))
-
-			nagioskey = 'hdbuserstore SET NAGIOS localhost:{} NAGIOS {}'.format(self.dparameters.get('sqlport'), self.dparameters.get('passwordkey'))
-
-			stdmuserkey = 'hdbuserstore SET STDMUSER localhost:{} STDMUSER {}'.format(self.dparameters.get('sqlport'), self.dparameters.get('passwordkey'))
-
-			hdbuserstorecommands = {wkey, sapdbctrlkey, bkpmonkey, bladelogickey, camkey, nagioskey, stdmuserkey}
-			for cmd in hdbuserstorecommands:
+			hdbuserstore_commands = {w_key, sap_db_ctrl_key, bkpmon_key, blade_logic_key, cam_key, nagios_key, stdmuser_key}
+			for cmd in hdbuserstore_commands:
 				subprocess.call(cmd, shell=True)
-
 			subprocess.call(['hdbuserstore list'], shell=True)
 
 
