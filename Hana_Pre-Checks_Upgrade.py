@@ -94,7 +94,7 @@ class HanaChecksSingleton(Borg):
 	def check_hana_replication(self):
 
 		possible_hana_replication_modes = {"none": False, "primary": True, "sync": True, "syncmem": True, "async": True}
-		hana_replication_mode = subprocess.check_output("""hdbnsutil -sr_state | grep mode: | awk -F ' ' '{print $2}'""", shell=True)
+		hana_replication_mode = subprocess.check_output("""hdbnsutil -sr_state | grep mode: | awk -F ' ' '{print $2}' | head -1""", shell=True)
 		check = possible_hana_replication_modes.get(hana_replication_mode, False)
 		if check:
 			print("\033[1;33m Database has replication enabled \n")
@@ -163,11 +163,11 @@ class BackupSingleton(Borg):
 		date_time_now = datetime.now()
 		time_delta_non_prod = timedelta(days=3)
 		time_delta_prod = timedelta(days=1)
-		command = self._shared_parameters['sql_connection_string'] + ''' "select top 1 SYS_END_TIME from m_backup_catalog where ENTRY_TYPE_NAME = 
+		command = self._shared_parameters['sql_connection_string'] + ''' "select top 1 SYS_END_TIME from m_backup_catalog where ENTRY_TYPE_NAME =
 				  'complete data backup' order by SYS_END_TIME desc" | awk 'BEGIN{FS="|"} {print $2}' | tail -n 1'''
 		output = subprocess.check_output(command, shell=True).strip("\n").strip(" ")[:-3]
 		last_data_backup_timestamp = datetime.strptime(output, '%Y-%m-%d %H:%M:%S.%f')
-		usage = subprocess.check_output(self._shared_parameters['sql_connection_string'] + """ "select VALUE from sys.m_inifile_contents where FILE_NAME 
+		usage = subprocess.check_output(self._shared_parameters['sql_connection_string'] + """ "select VALUE from sys.m_inifile_contents where FILE_NAME
 										= 'global.ini' and KEY = 'usage' and LAYER_NAME = 'DEFAULT'" | awk 'BEGIN{FS="|"} {print $2}' | tail -n 1""",
 		                                shell=True).strip("\n").strip(" ")
 		if usage == 'production':
@@ -217,7 +217,7 @@ class BackupSingleton(Borg):
 			print("\033[1;33m Parameter global.ini -> [persistence] -> log_backup_using_backint is not set properly \n")
 			print("\033[0m")
 		else:
-			command = self._shared_parameters['sql_connection_string'] + ''' "select VALUE from sys.m_inifile_contents where FILE_NAME = 'global.ini' and 
+			command = self._shared_parameters['sql_connection_string'] + ''' "select VALUE from sys.m_inifile_contents where FILE_NAME = 'global.ini' and
 					  KEY = 'log_backup_using_backint' and LAYER_NAME = 'DEFAULT'" | awk 'BEGIN{FS="|"} {print $2}' | tail -n 1'''
 			output = subprocess.check_output(command, shell=True).strip("\n").strip(" ")
 			if output == 'false':
@@ -255,7 +255,7 @@ class SidSingleton(Borg):
 			print('\033[0;31m \nLog in with <sid>adm user was not possible')
 			print("\033[0m")
 		else:
-			print('\033[0;32m \nLog in with <sid>adm user was successful')
+			print('\033[1;32m \nLog in with <sid>adm user was successful')
 			print("\033[0m")
 
 	def check_attributes(self):
