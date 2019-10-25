@@ -332,4 +332,6 @@ def main():
 		sys.exit("You must pass only one parameter to the script, which is the password for the HDBuserstore keys")
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+	main()
+
