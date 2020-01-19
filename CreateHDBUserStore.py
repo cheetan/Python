@@ -456,7 +456,7 @@ class HDBUserStoreClass(object):
 
         hdbuserstore_commands = {
             w_key, w_tenant_key, sap_db_ctrl_key, sap_db_ctrl_tenant_key,
-            sap_db_ctrl_tenant_port_key, bkpmon_key, blade_logic_key
+            sap_db_ctrl_tenant_port_key, bkpmon_key, blade_logic_key,
             blade_logic_tenant_key, cam_key, cam_tenant_key, nagios_key,
             nagios_tenant_key, stdmuser_key, stdmuser_tenant_key}
         for cmd in hdbuserstore_commands:
@@ -624,7 +624,7 @@ class HDBUserStoreClass(object):
 def main():
     if os.getlogin() == 'root':
         sys.exit(
-            re.sub(r"\s+", " ",
+            re.sub(r"\s+", "",
                    """You must be authenticated with <sid>adm
                     user in order to run the script""")
         )
@@ -632,7 +632,7 @@ def main():
         HDBUserStoreClass(sys.argv[1])
     else:
         sys.exit(
-            re.sub(r"\s+", " ",
+            re.sub(r"\s+", "",
                    """You must pass only one parameter to the script,
                     which is the password for the HDBuserstore keys""")
         )
