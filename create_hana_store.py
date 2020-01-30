@@ -2,8 +2,11 @@
 # This script is intended to create the keys in HDBuserstore of HANA
 # It work with HANA Non-MDC and HANA MDC
 # Author: Catalin Mihai Popa -> I324220
+# Used Facade structural pattern
+# Used Singleton creational pattern
 ############################################################################
 
+import getpass
 import os
 import re
 import subprocess
@@ -21,7 +24,7 @@ class Borg:
         self.__dict__ = self._shared_parameters
 
 
-class CommonParameters(Borg):  # Inherits from the Borg class
+class CommonParametersSingleton(Borg):  # Inherits from the Borg class
     """This class now shares all its attributes among its various instances"""
     # This essentially makes the singleton objects an object-oriented global variable
 
@@ -31,10 +34,10 @@ class CommonParameters(Borg):  # Inherits from the Borg class
         print(datetime.now().strftime(
             "\nTimestamp when the script was executed: %d/%m/%Y, %H:%M:%S\n\n\n"))
 
+        self._shared_parameters.update(sid=os.getenv("SAPSYSTEMNAME"))
         os.chdir(r"/hana/shared/" +
                  self._shared_parameters['sid'] + r"/profile/")
-        self._shared_parameters.update(password=argv)
-        self._shared_parameters.update(sid=os.getenv("SAPSYSTEMNAME"))
+        self._shared_parameters.update(passwordkey=argv)
         self._shared_parameters.update(
             instance_number=os.getenv("DIR_INSTANCE")[-2:])
         self._shared_parameters.update(
@@ -44,163 +47,89 @@ class CommonParameters(Borg):  # Inherits from the Borg class
         self._shared_parameters.update(
             client_interface_name=self._shared_parameters['localhostname'][0:-2])
 
-        output = subprocess.check_output(
-            ['hdbnsutil -printSystemInformation'], shell=True).splitlines(1)
-        for line in output:
-            if "SingleDB" in line:
-                self._shared_parameters['is_mdc'] = False
-            elif "MultiDB" in line:
-                self._shared_parameters['is_mdc'] = False
+        os.chdir(
+            r"/hana/shared/" +
+            self._shared_parameters['sid'] +
+            r"/global/hdb/custom/config")
+        masters_list = subprocess.check_output(
+            """awk '$1 == "master" {for(i=3; i<=NF; i++)
+			 print substr($i,1,12)}' nameserver.ini""",
+            shell=True).split()
+        for i, value in enumerate(masters_list, start=1):
+            self._shared_parameters["master_" + str(i)] = value
+        if 'master_2' in self._shared_parameters:
+            self._shared_parameters.update(is_multi_node=True)
+        else:
+            self._shared_parameters.update(is_multi_node=False)
+
+        hdbnsutil_output = subprocess.Popen(
+            ['hdbnsutil', '-sr_state'],
+            stdout=subprocess.PIPE).communicate()
+        if "active primary site" in hdbnsutil_output:
+            self._shared_parameters.update(has_replication=True)
+        else:
+            self._shared_parameters.update(has_replication=False)
 
     def __str__(self):
         # Returns the attribute dictionary for printing
         return str(self._shared_parameters)
 
 
-class HDBUserStoreClass(object):
+class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
+    """This class now shares all its attributes among its various instances"""
+    # This essentially makes the singleton objects an object-oriented global variable
 
-    def __init__(self, password):
+    def __init__(self):
+        Borg.__init__(self)
 
-        hana_type = subprocess.check_output(
+        output = subprocess.check_output(
             ['hdbnsutil -printSystemInformation'], shell=True).splitlines(1)
-
-        for line in hana_type:
+        for line in output:
             if "SingleDB" in line:
-                self.is_mdc = False
-                date_execution = datetime.now()
-                print(date_execution.strftime(
-                    "\nDate and time when the script was executed: %x, %H:%M"))
-                print("\n\n\n")
-                print(
-                    re.sub(r"\s+", " ",
-                           """################################# \t Print HANA Type\t
-                            # """))
-                print("\t\t\t\t HANA is Non-MDC")
-                print(
-                    re.sub(r"\s+", "",
-                           """####################################
-                           # """)
-                )
-                print("\n\n\n")
+                self._shared_parameters.update(is_mdc=False)
             elif "MultiDB" in line:
-                self.is_mdc = True
-                date_execution = datetime.now()
-                print(date_execution.strftime(
-                    "\nDate and time when the script was executed: %x, %H:%M"))
-                print("\n\n\n")
-                print(
-                    re.sub(r"\s+", " ",
-                           """################################# \t Print HANA Type\t
-                            # """)
-                )
-                print("\t\t\t\t HANA is MDC")
-                print(
-                    re.sub(r"\s+", "",
-                           """#########################################
-                           # """)
-                )
-                print("\n\n\n")
+                self._shared_parameters.update(is_mdc=True)
 
-        sap_system_name = subprocess.check_output(
-            'echo $SAPSYSTEMNAME', shell=True).replace('\n', '')
-        os.chdir(r"/hana/shared/" + sap_system_name + r"/profile/")
-        profile_name = subprocess.check_output(
-            'ls | egrep "(.*)_(.*)_(.*)"', shell=True).replace('\n', '')
-        instance_number = subprocess.check_output(
-            "less " +
-            profile_name +
-            ' | grep -w "SAPSYSTEM" ' +
-            "| grep -o '..$'", shell=True).replace('\n', '')
-
-        if not self.is_mdc:
-            self.dparameters = {
-                'sid': subprocess.check_output(
-                    'echo $SAPSYSTEMNAME',
-                    shell=True).replace('\n', ''),
-                'sqlport': '3{}15'.format(instance_number),
-                'localhostname': profile_name[-12:],
-                'instance_number': instance_number,
-                'passwordkey': password}
-        else:
-            self.dparameters = {
-                'systemdbsid': subprocess.check_output(
-                    'echo $SAPSYSTEMNAME',
-                    shell=True).replace('\n', ''),
-                'systemdbsqlport': subprocess.check_output(
-                    """hdbnsutil -printSystemInformation |
-					awk -v c=4 '/SYSTEMDB/{print $c}' |
-					grep ""--only-matching '.....$' """,
-                    shell=True).replace('\n', ''),
-                'localhostname': profile_name[-12:],
-                'client_interface_name': profile_name[-12:],
-                'instance_number': instance_number,
-                'passwordkey': password}
+        if self._shared_parameters['is_mdc'] is True:
+            output = subprocess.check_output(
+                """hdbnsutil -printSystemInformation |
+					 awk -v c=4 '/SYSTEMDB/{print $c}' |
+					 grep ""--only-matching '.....$' """,
+                shell=True).replace('\n', '')
+            self._shared_parameters.update(systemdbsqlport=output)
 
             os.chdir(r"/hana/shared/{0}/HDB{1}/{2}".format(
-                sap_system_name,
-                instance_number,
-                self.dparameters['localhostname']))
+                self._shared_parameters['sid'],
+                self._shared_parameters['instance_number'],
+                self._shared_parameters['localhostname']))
             found = False
             daemon_file = 'daemon.ini'
-            with open(daemon_file) as f:
-                for line in f:
+            with open(daemon_file) as file:
+                for line in file:
                     if not found and "[indexserver." in line:
-                        self.dparameters['tenantsid'] = line.strip(
+                        self._shared_parameters['tenantsid'] = line.strip(
                             "[indexserver.").strip("\n").strip("]")
                         found = True
-
-            self.dparameters['tenantsqlport'] = subprocess.check_output(
-                "hdbnsutil -printSystemInformation | awk -v c=2 '/{0}/{{print $c}}' | grep "
-                "--only-matching '.....$'".format(
-                    self.dparameters['tenantsid']),
+            self._shared_parameters['tenantsqlport'] = subprocess.check_output(
+                """hdbnsutil -printSystemInformation |
+                 awk -v c=2 '/{0}/{{print $c}}' |
+                 grep --only-matching '.....$'""".format(self._shared_parameters['tenantsid']),
                 shell=True).replace('\n', '')
 
-        os.chdir(
-            r"/hana/shared/" + sap_system_name +
-            r"/global/hdb/custom/config")
-        masters_list = subprocess.check_output(
-            """awk '$1 == "master" {for(i=3; i<=NF; i++)
-			 print substr($i,1,12)}' nameserver.ini""",
-            shell=True).split()
-        for i, v in enumerate(masters_list, start=1):
-            self.dparameters["master_" + str(i)] = v
-        # for i in range(len(masters_list)):
-        # 	self.dparameters["master_" + str(i+1)] = masters_list[i]
-
-        print(
-            re.sub(r"\s+", " ",
-                   """################################# \t Parameters to be
-                    used in HDBuserstore keys creation
-                    \t #################################""")
-        )
-        for k, v in self.dparameters.items():
-            print('Parameter name: {} -> {}'.format(k, v))
-        print(
-            re.sub(r"\s+", "",
-                   """######################################################
-                   ################################################
-                   # """)
-        )
-        print("\n\n\n")
-
-        if 'master_2' in self.dparameters:
-            self.is_multi_node = True
+            self.create_hana_hdb_user_store_mdc()
         else:
-            self.is_multi_node = False
+            self._shared_parameters.update(
+                sqlport='3{}15'.format(
+                    self._shared_parameters['instance_number'])
+            )
 
-        replication_process = subprocess.Popen(
-            ['hdbnsutil', '-sr_state'],
-            stdout=subprocess.PIPE)
-        out = replication_process.communicate()
-        self.has_replication = True if "active primary site" in out else False
+            self.create_hana_hdb_user_store_non_mdc()
 
-        if self.is_mdc:
-            self.create_hdb_user_store_hana_mdc()
-        else:
-            self.create_hdb_user_store_hana_non_mdc()
+    def __str__(self):
+        # Returns the attribute dictionary for printing
+        return str(self._shared_parameters)
 
-    def create_hdb_user_store_hana_mdc(self):
-
+    def create_hana_hdb_user_store_mdc(self):
         # W KEYS ########################
         w_key_templ = Template(
             re.sub(r"\s+", " ",
@@ -246,37 +175,37 @@ class HDBUserStoreClass(object):
         # SAPDBCTRL KEYS ########################
         sap_db_ctrl_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL
+                   """hdbuserstore SET ${sid}SAPDBCTRL
                     localhost:${systemdbsqlport}
                     SAP_DBCTRL ${passwordkey};""")
         )
         sap_db_ctrl_client_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL
+                   """hdbuserstore SET ${sid}SAPDBCTRL
                     ${client_interface_name}:${systemdbsqlport}
                     SAP_DBCTRL ${passwordkey};""")
         )
         sap_db_ctrl_tenant_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid}
+                   """hdbuserstore SET ${sid}SAPDBCTRL${tenantsid}
                     localhost:${systemdbsqlport}@${tenantsid}
                     SAP_DBCTRL ${passwordkey};""")
         )
         sap_db_ctrl_tenant_client_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid}
+                   """hdbuserstore SET ${sid}SAPDBCTRL${tenantsid}
                     ${client_interface_name}:${systemdbsqlport}@${tenantsid}
                     SAP_DBCTRL ${passwordkey};""")
         )
         sap_db_ctrl_tenant_port_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid}
+                   """hdbuserstore SET ${sid}SAPDBCTRL${tenantsid}
                     localhost:${tenantsqlport}
                     SAP_DBCTRL ${passwordkey};""")
         )
         sap_db_ctrl_tenant_port_client_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL${tenantsid}
+                   """hdbuserstore SET ${sid}SAPDBCTRL${tenantsid}
                     ${client_interface_name}:${tenantsqlport}
                     SAP_DBCTRL ${passwordkey};""")
         )
@@ -399,105 +328,116 @@ class HDBUserStoreClass(object):
                     STDMUSER ${passwordkey};""")
         )
 
-        print("\n\n\nTEST 1\n\n\n")
-
-        # HANA MDC Multi Node with HA ########################
-        if self.has_replication & self.is_multi_node:
-            w_key = w_key_multi_templ.substitute(self.dparameters)
+        # HANA Multi Node with HA ########################
+        if (self._shared_parameters['is_multi_node'] is True &
+                self._shared_parameters['has_replication'] is True):
+            w_key = w_key_multi_templ.substitute(self._shared_parameters)
             w_tenant_key = w_key_tenant_multi_templ.substitute(
-                self.dparameters)
-            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
-            sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(
-                self.dparameters)
-            sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(
-                self.dparameters)
-            bkpmon_key = bkpmon_templ.substitute(self.dparameters)
-            blade_logic_key = blade_logic_templ.substitute(self.dparameters)
-            blade_logic_tenant_key = blade_logic_tenant_templ.substitute(
-                self.dparameters)
-            cam_key = cam_templ.substitute(self.dparameters)
-            cam_tenant_key = cam_tenant_templ.substitute(self.dparameters)
-            nagios_key = nagios_templ.substitute(self.dparameters)
-            nagios_tenant_key = nagios_tenant_templ.substitute(
-                self.dparameters)
-            stdmuser_key = stdmuser_templ.substitute(self.dparameters)
-            stdmuser_tenant_key = stdmuser_tenant_templ.substitute(
-                self.dparameters)
-
-        # HANA MDC Single Node without HA ########################
-        elif self.has_replication is not True & self.is_multi_node is not True:
-            w_key = w_key_templ.substitute(self.dparameters)
-            w_tenant_key = w_key_tenant_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_key = sap_db_ctrl_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(
-                self.dparameters)
-            bkpmon_key = bkpmon_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            bkpmon_key = bkpmon_templ.substitute(self._shared_parameters)
             blade_logic_key = blade_logic_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             blade_logic_tenant_key = blade_logic_tenant_templ.substitute(
-                self.dparameters)
-            cam_key = cam_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            cam_key = cam_templ.substitute(self._shared_parameters)
             cam_tenant_key = cam_tenant_templ.substitute(
-                self.dparameters)
-            nagios_key = nagios_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            nagios_key = nagios_templ.substitute(self._shared_parameters)
             nagios_tenant_key = nagios_tenant_templ.substitute(
-                self.dparameters)
-            stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            stdmuser_key = stdmuser_templ.substitute(self._shared_parameters)
             stdmuser_tenant_key = stdmuser_tenant_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
 
-        # HANA MDC Multi Node without HA ########################
-        elif self.has_replication is not True & self.is_multi_node is True:
-            w_key = w_key_multi_templ.substitute(self.dparameters)
-            w_tenant_key = w_key_tenant_multi_templ.substitute(
-                self.dparameters)
-            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
+        # HANA Single Node without HA ########################
+        elif(self._shared_parameters['has_replication'] is False &
+             self._shared_parameters['is_multi_node'] is False):
+            w_key = w_key_templ.substitute(self._shared_parameters)
+            w_tenant_key = w_key_tenant_templ.substitute(
+                self._shared_parameters)
+            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(
+                self._shared_parameters)
             sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(
-                self.dparameters)
-            bkpmon_key = bkpmon_templ.substitute(self.dparameters)
-            blade_logic_key = blade_logic_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            bkpmon_key = bkpmon_templ.substitute(self._shared_parameters)
+            blade_logic_key = blade_logic_templ.substitute(
+                self._shared_parameters)
             blade_logic_tenant_key = blade_logic_tenant_templ.substitute(
-                self.dparameters)
-            cam_key = cam_templ.substitute(self.dparameters)
-            cam_tenant_key = cam_tenant_templ.substitute(self.dparameters)
-            nagios_key = nagios_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            cam_key = cam_templ.substitute(self._shared_parameters)
+            cam_tenant_key = cam_tenant_templ.substitute(
+                self._shared_parameters)
+            nagios_key = nagios_templ.substitute(self._shared_parameters)
             nagios_tenant_key = nagios_tenant_templ.substitute(
-                self.dparameters)
-            stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            stdmuser_key = stdmuser_templ.substitute(self._shared_parameters)
             stdmuser_tenant_key = stdmuser_tenant_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
 
-        elif self.has_replication is True & self.is_multi_node is not True:
-            print("\n\n\nTEST 2\n\n\n")
-            w_key = w_key_client_templ.substitute(self.dparameters)
+        # HANA Multi Node without HA ########################
+        elif(self._shared_parameters['has_replication'] is False &
+             self._shared_parameters['is_multi_node'] is True):
+            w_key = w_key_multi_templ.substitute(self._shared_parameters)
+            w_tenant_key = w_key_tenant_multi_templ.substitute(
+                self._shared_parameters)
+            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(
+                self._shared_parameters)
+            sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_templ.substitute(
+                self._shared_parameters)
+            sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_templ.substitute(
+                self._shared_parameters)
+            bkpmon_key = bkpmon_templ.substitute(self._shared_parameters)
+            blade_logic_key = blade_logic_templ.substitute(
+                self._shared_parameters)
+            blade_logic_tenant_key = blade_logic_tenant_templ.substitute(
+                self._shared_parameters)
+            cam_key = cam_templ.substitute(self._shared_parameters)
+            cam_tenant_key = cam_tenant_templ.substitute(
+                self._shared_parameters)
+            nagios_key = nagios_templ.substitute(self._shared_parameters)
+            nagios_tenant_key = nagios_tenant_templ.substitute(
+                self._shared_parameters)
+            stdmuser_key = stdmuser_templ.substitute(self._shared_parameters)
+            stdmuser_tenant_key = stdmuser_tenant_templ.substitute(
+                self._shared_parameters)
+
+        # HANA Single Node with HA ########################
+        elif(self._shared_parameters['has_replication'] is True &
+             self._shared_parameters['is_multi_node'] is False):
+            w_key = w_key_client_templ.substitute(self._shared_parameters)
             w_tenant_key = w_key_tenant_client_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_key = sap_db_ctrl_client_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_tenant_key = sap_db_ctrl_tenant_client_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             sap_db_ctrl_tenant_port_key = sap_db_ctrl_tenant_port_client_templ.substitute(
-                self.dparameters)
-            bkpmon_key = bkpmon_client_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            bkpmon_key = bkpmon_client_templ.substitute(
+                self._shared_parameters)
             blade_logic_key = blade_logic_client_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
             blade_logic_tenant_key = blade_logic_tenant_client_templ.substitute(
-                self.dparameters)
-            cam_key = cam_client_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            cam_key = cam_client_templ.substitute(self._shared_parameters)
             cam_tenant_key = cam_tenant_client_templ.substitute(
-                self.dparameters)
-            nagios_key = nagios_client_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            nagios_key = nagios_client_templ.substitute(
+                self._shared_parameters)
             nagios_tenant_key = nagios_tenant_client_templ.substitute(
-                self.dparameters)
-            stdmuser_key = stdmuser_client_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            stdmuser_key = stdmuser_client_templ.substitute(
+                self._shared_parameters)
             stdmuser_tenant_key = stdmuser_tenant_client_templ.substitute(
-                self.dparameters)
+                self._shared_parameters)
 
         hdbuserstore_commands = {
             w_key, w_tenant_key, sap_db_ctrl_key, sap_db_ctrl_tenant_key,
@@ -505,12 +445,10 @@ class HDBUserStoreClass(object):
             blade_logic_tenant_key, cam_key, cam_tenant_key, nagios_key,
             nagios_tenant_key, stdmuser_key, stdmuser_tenant_key}
         for cmd in hdbuserstore_commands:
-            print("\n\n\nTEST\n\n\n")
             subprocess.call(cmd, shell=True)
         subprocess.call(['hdbuserstore list'], shell=True)
 
-    def create_hdb_user_store_hana_non_mdc(self):
-
+    def create_hana_hdb_user_store_non_mdc(self):
         # W KEYS ########################
         w_key_templ = Template(
             re.sub(r"\s+", " ",
@@ -536,13 +474,13 @@ class HDBUserStoreClass(object):
         # SAPDBCTRL KEYS ########################
         sap_db_ctrl_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL
+                   """hdbuserstore SET ${sid}SAPDBCTRL
                     localhost:${systemdbsqlport}
                     SAP_DBCTRL ${passwordkey};""")
         )
         sap_db_ctrl_client_templ = Template(
             re.sub(r"\s+", " ",
-                   """hdbuserstore SET ${systemdbsid}SAPDBCTRL
+                   """hdbuserstore SET ${sid}SAPDBCTRL
                     ${client_interface_name}:${systemdbsqlport}
                     SAP_DBCTRL ${passwordkey};""")
         )
@@ -617,47 +555,60 @@ class HDBUserStoreClass(object):
                     STDMUSER ${passwordkey};""")
         )
 
-        # HANA Non-MDC Multi Node with HA ########################
-        if self.has_replication & self.is_multi_node:
-            w_key = w_key_multi_templ.substitute(self.dparameters)
-            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
-            bkpmon_key = bkpmon_templ.substitute(self.dparameters)
-            blade_logic_key = blade_logic_templ.substitute(self.dparameters)
-            cam_key = cam_templ.substitute(self.dparameters)
-            nagios_key = nagios_templ.substitute(self.dparameters)
-            stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+        # HANA Multi Node with HA ########################
+        if(self._shared_parameters['has_replication'] is True &
+           self._shared_parameters['is_multi_node'] is True):
+            w_key = w_key_multi_templ.substitute(self._shared_parameters)
+            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(
+                self._shared_parameters)
+            bkpmon_key = bkpmon_templ.substitute(self._shared_parameters)
+            blade_logic_key = blade_logic_templ.substitute(
+                self._shared_parameters)
+            cam_key = cam_templ.substitute(self._shared_parameters)
+            nagios_key = nagios_templ.substitute(self._shared_parameters)
+            stdmuser_key = stdmuser_templ.substitute(self._shared_parameters)
 
-        # HANA Non-MDC Single Node with HA ########################
-        elif self.has_replication is True & self.is_multi_node is not True:
-            w_key = w_key_client_templ.substitute(self.dparameters)
+        # HANA Single Node with HA ########################
+        elif(self._shared_parameters['has_replication'] is True &
+             self._shared_parameters['is_multi_node'] is False):
+            w_key = w_key_client_templ.substitute(self._shared_parameters)
             sap_db_ctrl_key = sap_db_ctrl_client_templ.substitute(
-                self.dparameters)
-            bkpmon_key = bkpmon_client_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            bkpmon_key = bkpmon_client_templ.substitute(
+                self._shared_parameters)
             blade_logic_key = blade_logic_client_templ.substitute(
-                self.dparameters)
-            cam_key = cam_client_templ.substitute(self.dparameters)
-            nagios_key = nagios_client_templ.substitute(self.dparameters)
-            stdmuser_key = stdmuser_client_templ.substitute(self.dparameters)
+                self._shared_parameters)
+            cam_key = cam_client_templ.substitute(self._shared_parameters)
+            nagios_key = nagios_client_templ.substitute(
+                self._shared_parameters)
+            stdmuser_key = stdmuser_client_templ.substitute(
+                self._shared_parameters)
 
-        # HANA Non-MDC Multi Node without HA ########################
-        elif self.has_replication is not True & self.is_multi_node is True:
-            w_key = w_key_multi_templ.substitute(self.dparameters)
-            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
-            bkpmon_key = bkpmon_templ.substitute(self.dparameters)
-            blade_logic_key = blade_logic_templ.substitute(self.dparameters)
-            cam_key = cam_templ.substitute(self.dparameters)
-            nagios_key = nagios_templ.substitute(self.dparameters)
-            stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+        # HANA Multi Node without HA ########################
+        elif(self._shared_parameters['has_replication'] is False &
+             self._shared_parameters['is_multi_node'] is True):
+            w_key = w_key_multi_templ.substitute(self._shared_parameters)
+            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(
+                self._shared_parameters)
+            bkpmon_key = bkpmon_templ.substitute(self._shared_parameters)
+            blade_logic_key = blade_logic_templ.substitute(
+                self._shared_parameters)
+            cam_key = cam_templ.substitute(self._shared_parameters)
+            nagios_key = nagios_templ.substitute(self._shared_parameters)
+            stdmuser_key = stdmuser_templ.substitute(self._shared_parameters)
 
-        # HANA Non-MDC Single Node without HA ########################
-        elif self.has_replication is not True & self.is_multi_node is not True:
-            w_key = w_key_templ.substitute(self.dparameters)
-            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(self.dparameters)
-            bkpmon_key = bkpmon_templ.substitute(self.dparameters)
-            blade_logic_key = blade_logic_templ.substitute(self.dparameters)
-            cam_key = cam_templ.substitute(self.dparameters)
-            nagios_key = nagios_templ.substitute(self.dparameters)
-            stdmuser_key = stdmuser_templ.substitute(self.dparameters)
+        # HANA Single Node without HA ########################
+        elif(self._shared_parameters['has_replication'] is False &
+             self._shared_parameters['is_multi_node'] is False):
+            w_key = w_key_templ.substitute(self._shared_parameters)
+            sap_db_ctrl_key = sap_db_ctrl_templ.substitute(
+                self._shared_parameters)
+            bkpmon_key = bkpmon_templ.substitute(self._shared_parameters)
+            blade_logic_key = blade_logic_templ.substitute(
+                self._shared_parameters)
+            cam_key = cam_templ.substitute(self._shared_parameters)
+            nagios_key = nagios_templ.substitute(self._shared_parameters)
+            stdmuser_key = stdmuser_templ.substitute(self._shared_parameters)
 
         hdbuserstore_commands = {w_key, sap_db_ctrl_key, bkpmon_key,
                                  blade_logic_key, cam_key, nagios_key, stdmuser_key}
@@ -666,21 +617,27 @@ class HDBUserStoreClass(object):
         subprocess.call(['hdbuserstore list'], shell=True)
 
 
+class Facade:
+
+    def __init__(self, password):
+        self._initialize_parameters = CommonParametersSingleton(password)
+        self._hana_type = HanaParametersBasedTypeSingleton()
+
+    def __str__(self):
+        return str(self._initialize_parameters)
+
+
 def main():
-    if os.getlogin() == 'root':
+    if getpass.getuser() == 'root':
         sys.exit(
-            re.sub(r"\s+", "",
-                   """You must be authenticated with <sid>adm
-                    user in order to run the script""")
-        )
+            "You must be authenticated with <sid>adm user in order to run the script \n")
     if len(sys.argv) == 2:
-        CommonParameters(sys.argv[1])
+        facade = Facade(sys.argv[1])
+        print(facade)
     else:
         sys.exit(
-            re.sub(r"\s+", "",
-                   """You must pass only one parameter to the script,
-                    which is the password for the HDBuserstore keys""")
-        )
+            "You must pass only one parameter to the script, \
+                which is the password for the keys \n")
 
 
 if __name__ == '__main__':
