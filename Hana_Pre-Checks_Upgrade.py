@@ -40,6 +40,27 @@ class ParameterManagerSingleton(Borg):
         return str(self._shared_parameters)
 
 
+class OsSingleton(Borg):
+    """This class now shares all its attributes among its various instances"""
+
+    def __init__(self):
+        Borg.__init__(self)
+        self._shared_parameters.update(
+            os_version=subprocess.check_output(
+                """cat /etc/os-release | grep VERSION_ID | \
+                awk -F '"' '{print $2}'""",
+                shell=True).replace("\n", "")
+        )
+
+    def print_os_version(self):
+        print("\033[1;32m OS version is:\t\t" + \
+              self._shared_parameters['os_version'] + "\n")
+        print("\033[0m")
+
+    def __str__(self):
+        return str(self._shared_parameters)
+
+
 class HanaChecksSingleton(Borg):
     """This class now shares all its attributes among its various instances"""
 
@@ -407,12 +428,14 @@ class Facade:
 
     def __init__(self, system_password):
         self._parameter_manager = ParameterManagerSingleton(system_password)
+        self._os_version = OsSingleton()
         self._hana_checks = HanaChecksSingleton()
         self._backup_checks = BackupSingleton()
         self._sid_checks = SidSingleton()
 
     def trigger_hana_upgrade_checks(self):
         self._sid_checks.check_attributes()
+        self._os_version.print_os_version()
         self._hana_checks.check_if_multinode()
         self._hana_checks.check_hana_services()
         self._hana_checks.check_hana_replication()
