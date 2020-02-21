@@ -16,6 +16,8 @@ import logging
 
 BACKINT_MODULE = 821
 BACKINT_BUILD = 773
+OS_VERSION_LANDMARK = 123
+HANA_VERSION_LANDMARK = 20040
 
 
 class Borg:
@@ -53,9 +55,35 @@ class OsSingleton(Borg):
         )
 
     def print_os_version(self):
-        print("\033[1;32m OS version is:\t\t" + \
-              self._shared_parameters['os_version'] + "\n")
+        print(
+            """\n\033[94m The current OS version is:\t{}
+            Please check its compatibility""".format(
+                self._shared_parameters['os_version']))
         print("\033[0m")
+
+    # def check_os_compatibility(self):
+
+    #     hana_version_to_upgrade = int(input(
+    #         " Enter the HANA version to upgrade, in the format 10120 or 20040:\t"
+    #     ))
+
+    #     if (self._shared_parameters['os_version'] < OS_VERSION_LANDMARK and
+    #             hana_version_to_upgrade >= HANA_VERSION_LANDMARK):
+    #         print("\n\033[1;31m The current OS version is not compatible")
+    #         print("\n\033[94m Current OS version is:\t{}".format(
+    #             self._shared_parameters['os_version']))
+    #         print("\033[0m")
+    #     elif (self._shared_parameters['os_version'] < OS_VERSION_LANDMARK and
+    #           hana_version_to_upgrade < HANA_VERSION_LANDMARK):
+    #         print("\n\033[1;32m The current OS version is compatible")
+    #         print("\n\033[94m Current OS version is:\t{}".format(
+    #             self._shared_parameters['os_version']))
+    #         print("\033[0m")
+    #     else:
+    #         print("\n\033[1;32m The current OS version is compatible")
+    #         print("\n\033[94m Current OS version is:\t{}".format(
+    #             self._shared_parameters['os_version']))
+    #         print("\033[0m")
 
     def __str__(self):
         return str(self._shared_parameters)
@@ -339,7 +367,7 @@ class SidSingleton(Borg):
 
     @staticmethod
     def check_password():
-        sid_password = getpass.getpass('Provide the <sid>adm user password: ')
+        sid_password = getpass.getpass(' Provide the <sid>adm user password: ')
         process = subprocess.Popen(
             ['sudo', '-kS'],
             stdin=subprocess.PIPE,
@@ -349,10 +377,10 @@ class SidSingleton(Borg):
         process.stdin.write(sid_password + '\n')
         process.communicate()
         if process.returncode:
-            print('\033[0;31m \nLog in with <sid>adm user was not possible')
+            print('\033[0;31m \n Log in with <sid>adm user was not possible')
             print("\033[0m")
         else:
-            print('\033[1;32m \nLog in with <sid>adm user was successful')
+            print('\033[1;32m \n Log in with <sid>adm user was successful')
             print("\033[0m")
 
     def check_attributes(self):
