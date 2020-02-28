@@ -162,7 +162,7 @@ class HanaChecksSingleton(Borg):
             "none": False, "primary": True, "sync": True, "syncmem": True, "async": True}
         hana_replication_mode = subprocess.check_output(
             """hdbnsutil -sr_state | grep mode: | awk -F ' ' '{print $2}' | head -1""",
-            shell=True)
+            shell=True).replace("\n", "")
         check = possible_hana_replication_modes.get(
             hana_replication_mode, False)
         if check:
