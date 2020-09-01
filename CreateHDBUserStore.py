@@ -97,8 +97,8 @@ class HDBUserStoreClass(object):
                 self.dparameters['localhostname']))
             found = False
             daemon_file = 'daemon.ini'
-            with open(daemon_file) as f:
-                for line in f:
+            with open(daemon_file) as daemon_file:
+                for line in daemon_file:
                     if not found and "[indexserver." in line:
                         self.dparameters['tenantsid'] = line.strip(
                             "[indexserver.").strip("\n").strip("]")
@@ -117,8 +117,8 @@ class HDBUserStoreClass(object):
             """awk '$1 == "master" {for(i=3; i<=NF; i++)
 			 print substr($i,1,12)}' nameserver.ini""",
             shell=True).split()
-        for i, v in enumerate(masters_list, start=1):
-            self.dparameters["master_" + str(i)] = v
+        for key, value in enumerate(masters_list, start=1):
+            self.dparameters["master_" + str(key)] = value
         # for i in range(len(masters_list)):
         # 	self.dparameters["master_" + str(i+1)] = masters_list[i]
 
@@ -128,8 +128,8 @@ class HDBUserStoreClass(object):
                     used in HDBuserstore keys creation
                     \t #################################""")
         )
-        for k, v in self.dparameters.items():
-            print('Parameter name: {} -> {}'.format(k, v))
+        for key, value in self.dparameters.items():
+            print('Parameter name: {} -> {}'.format(key, value))
         print(
             re.sub(r"\s+", "",
                    """######################################################
@@ -624,7 +624,7 @@ class HDBUserStoreClass(object):
 def main():
     if os.getlogin() == 'root':
         sys.exit(
-            re.sub(r"\s+", "",
+            re.sub(r"\s+", " ",
                    """You must be authenticated with <sid>adm
                     user in order to run the script""")
         )
@@ -632,7 +632,7 @@ def main():
         HDBUserStoreClass(sys.argv[1])
     else:
         sys.exit(
-            re.sub(r"\s+", "",
+            re.sub(r"\s+", " ",
                    """You must pass only one parameter to the script,
                     which is the password for the HDBuserstore keys""")
         )
