@@ -154,7 +154,6 @@ class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
         w_key_multi_replication_templ = Template(
             re.sub(r"\s+", " ",
                    """hdbuserstore SET W
-                    '${client_interface_name}:3${instance_number}13,
                     ${master_1}:3${instance_number}13,
                     ${master_2}:3${instance_number}13,
                     ${master_3}:3${instance_number}13'
@@ -183,7 +182,6 @@ class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
         w_key_tenant_multi_replication_templ = Template(
             re.sub(r"\s+", " ",
                    """hdbuserstore set W${tenantsid}
-                    '${client_interface_name}:3${instance_number}13,
                     ${master_1}:3${instance_number}13,
                     ${master_2}:3${instance_number}13,
                     ${master_3}:3${instance_number}13'@${tenantsid}
@@ -292,7 +290,6 @@ class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
         cam_multi_replication_templ = Template(
             re.sub(r"\s+", " ",
                    """hdbuserstore SET CAM
-                    '${client_interface_name}:3${instance_number}13
                     ${master_1}:3${instance_number}13,
                     ${master_2}:3${instance_number}13,
                     ${master_3}:3${instance_number}13'
@@ -321,7 +318,6 @@ class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
         cam_tenant_multi_replication_templ = Template(
             re.sub(r"\s+", " ",
                    """hdbuserstore set CAM${tenantsid}
-                    '${client_interface_name}:3${instance_number}13,
                     ${master_1}:3${instance_number}13,
                     ${master_2}:3${instance_number}13,
                     ${master_3}:3${instance_number}13'@${tenantsid}
@@ -528,7 +524,6 @@ class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
         w_key_multi_replication_templ = Template(
             re.sub(r"\s+", " ",
                    """hdbuserstore SET W
-                    '${client_interface_name}:${sqlport},
                     ${master_1}:${sqlport},
                     ${master_2}:${sqlport},
                     ${master_3}:${sqlport}'
@@ -601,7 +596,6 @@ class HanaParametersBasedTypeSingleton(Borg):  # Inherits from the Borg class
         cam_multi_replication_templ = Template(
             re.sub(r"\s+", " ",
                    """hdbuserstore SET CAM
-                    '${client_interface_name}:${sqlport},
                     ${master_1}:${sqlport},
                     ${master_2}:${sqlport},
                     ${master_3}:${sqlport}'
